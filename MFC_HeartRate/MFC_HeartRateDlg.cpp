@@ -134,8 +134,8 @@ void CMFC_HeartRateDlg::DoEvent()
 double CMFC_HeartRateDlg::GetHeartRate(complex *in_data)
 {
 	double HR = 0;
-	double A = sqrt(pow(in_data[dataNum / 66].re, 2) + pow(G_Fourier[dataNum / 66].im, 2));
-	for (int i = dataNum / 66; i < (5 * dataNum) / 66; i++)
+	double A = sqrt(pow(in_data[(int)0.5*dataNum/FPS].re, 2) + pow(G_Fourier[(int)0.5*dataNum / FPS].im, 2));
+	for (int i = 0.5*dataNum / FPS; i < 2.5*dataNum / FPS; i++)
 	{
 	if (sqrt(pow(G_Fourier[i + 1].re, 2) + pow(G_Fourier[i + 1].im, 2)) > A)
 	{
