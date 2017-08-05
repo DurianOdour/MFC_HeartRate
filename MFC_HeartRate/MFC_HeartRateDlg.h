@@ -8,6 +8,8 @@
 #include<iostream>
 #include<fstream>
 #include"time.h"
+#include"CFilter.h"
+
 //***************************多媒體計時器
 #include <windows.h>
 #include <mmsystem.h>
@@ -56,24 +58,24 @@ protected:
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
 public:
+	vectord G_signal, b_coeff, a_coeff;
 	MMRESULT FTimerID;
+	CFilter filter;
 	void DoEvent();
-	double GetHeartRate(complex * in_data);
-	void ShiftData();
-	void FaceDetect();
+	double GetHeartRate(complex * in_data, int dataLength);
 
+	void FaceDetect();
 	CthreadParam m_threadPara;
 	CWinThread*  m_lpThread;
 	static UINT threadFun(LPVOID LParam);
-	void WriteTxt(void);
+	
 	void ShowImage(cv::Mat Image, CWnd * pWnd);
+	void LoadData();
+	void getFourier(vectord & InputData, complex * outFourierData);
 	void Thread_Image_RGB(LPVOID lParam);
-
 	void Thread_ListenTime(LPVOID lParam);
 
-
 	afx_msg void OnBnClickedButtonDetection();
-	void GetMeanAndFourier(float * Data, int dataNo, complex * out_data);
 	afx_msg void OnBnClickedButtonStart();
 	CascadeClassifier face_cascade;
 	static CvCapture *cap;
@@ -81,14 +83,16 @@ public:
 	static cv::Point LT, RB ;
 	Mat Img_ROI;
 	std::vector<Rect> faces;
-	float GData[1000] = { 0 };
+	
 	static float time;
 	void DFT(int data_no, complex * in_data, complex * out_data);
-	float MeanofGreen(Mat img);
+
+	double MeanofGreen(Mat img);
+	
 	bool f_ROI_successed = false;
 	bool f_SampleDone = false;
-	int dataNum = 0;
+	
 	static time_t t_start;
 	CStatic m_ImgShow;
-	complex *G_Fourier;
+	
 };

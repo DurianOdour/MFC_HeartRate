@@ -17,9 +17,6 @@ cv::Point CMFC_HeartRateDlg::LT = { 0 };
 cv::Point CMFC_HeartRateDlg::RB = { 0 };
 float CMFC_HeartRateDlg::time = 0;
 time_t CMFC_HeartRateDlg::t_start;
-// CMFC_HeartRateDlg 對話方塊
-
-
 
 CMFC_HeartRateDlg::CMFC_HeartRateDlg(CWnd* pParent /*=NULL*/)
 	: CDialogEx(IDD_MFC_HEARTRATE_DIALOG, pParent)
@@ -88,7 +85,6 @@ HCURSOR CMFC_HeartRateDlg::OnQueryDragIcon()
 {
 	return static_cast<HCURSOR>(m_hIcon);
 }
-
 void CALLBACK TimeProc(UINT uTimerID, UINT uMsg, DWORD dwUser, DWORD dw1, DWORD dw2)
 {
 	CMFC_HeartRateDlg *pointer = (CMFC_HeartRateDlg *)dwUser;
@@ -103,17 +99,17 @@ void CMFC_HeartRateDlg::DoEvent()
 	if (f_ROI_successed && !f_SampleDone)
 	{
 		Img_ROI = frame(faces[0]);
-
-		GData[dataNum] = MeanofGreen(Img_ROI);
-		dataNum++;
+		G_signal.push_back(MeanofGreen(Img_ROI));
 	}
-	if (dataNum>=FPS*30 && !f_SampleDone)
+	if (G_signal.size()>=FPS*30 && !f_SampleDone)
 	{
-		WriteTxt();
 		f_ROI_successed = false;
-		G_Fourier = new complex[dataNum];
-		GetMeanAndFourier(GData, dataNum, G_Fourier);
-		double HR = GetHeartRate(G_Fourier);
+		vectord G_filtfilt_out;
+		filter.filtfilt(b_coeff,a_coeff, G_signal, G_filtfilt_out);	
+		complex *G_signal_fourier = new complex[G_signal.size()];
+		getFourier(G_filtfilt_out, G_signal_fourier);
+		double HR = GetHeartRate(G_signal_fourier, G_signal.size());
+		delete [] G_signal_fourier;
 		CString str; str.Format(_T("%f"), HR);
 		SetDlgItemText(IDC_HR, str);
 		f_SampleDone = true;
@@ -121,26 +117,32 @@ void CMFC_HeartRateDlg::DoEvent()
 	if (f_SampleDone)
 	{
 	Img_ROI = frame(faces[0]);
-	GData[dataNum] = MeanofGreen(Img_ROI);
-	for (int i = 0; i < dataNum; i++)GData[i] = GData[i + 1];
-	GetMeanAndFourier(GData, dataNum, G_Fourier);
-	double HR = GetHeartRate(G_Fourier);
+	G_signal.push_back(MeanofGreen(Img_ROI));
+	if (G_signal.size() >= 910)
+		for (unsigned int i = 0; i < G_signal.size()-10; i++)
+			G_signal[i] = G_signal[i + 10];
+	vectord G_filtfilt_out;
+	filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
+	complex *G_signal_fourier = new complex[G_signal.size()];
+	getFourier(G_filtfilt_out, G_signal_fourier);
+	double HR = GetHeartRate(G_signal_fourier, G_signal.size());
+	delete[]G_signal_fourier;
 	CString str; str.Format(_T("%f"), HR);
 	SetDlgItemText(IDC_HR, str);
 	}
-	CString str; str.Format(_T("%d"), dataNum);
+	CString str; str.Format(_T("%d"), G_signal.size());
 	SetDlgItemText(IDC_STATIC_DataNum,str);
 }
-double CMFC_HeartRateDlg::GetHeartRate(complex *in_data)
+double CMFC_HeartRateDlg::GetHeartRate(complex *in_data,int dataLength)
 {
 	double HR = 0;
-	double A = sqrt(pow(in_data[(int)0.5*dataNum/FPS].re, 2) + pow(G_Fourier[(int)0.5*dataNum / FPS].im, 2));
-	for (int i = 0.5*dataNum / FPS; i < 2.5*dataNum / FPS; i++)
+	double A = sqrt(pow(in_data[(int)0.5*dataLength /FPS].re, 2) + pow(in_data[(int)0.5*dataLength / FPS].im, 2));
+	for (int i = 0.5*dataLength / FPS; i < 2.5*dataLength / FPS; i++)
 	{
-	if (sqrt(pow(G_Fourier[i + 1].re, 2) + pow(G_Fourier[i + 1].im, 2)) > A)
+	if (sqrt(pow(in_data[i + 1].re, 2) + pow(in_data[i + 1].im, 2)) > A)
 	{
-		A = sqrt(pow(G_Fourier[i + 1].re, 2) + pow(G_Fourier[i + 1].im, 2));
-		HR = (double)60 * i * FPS / (double)(dataNum);
+		A = sqrt(pow(in_data[i + 1].re, 2) + pow(in_data[i + 1].im, 2));
+		HR = (double)60 * i * FPS / (double)(dataLength);
 	}
 	}
 	return HR;
@@ -182,16 +184,19 @@ void CMFC_HeartRateDlg::DFT(int data_no, complex *in_data, complex *out_data)
 		}
 	}
 }
-float CMFC_HeartRateDlg::MeanofGreen(Mat img)
+double CMFC_HeartRateDlg::MeanofGreen(Mat img)
 {
 	int sum = 0;
-	float mean;
-	for (unsigned int i = 0; i < Img_ROI.cols; i++)
-	{
-		for (unsigned int j = 0; j < Img_ROI.rows; j++)
-			sum = sum + (int)img.at<Vec3b>(i, j)[1];
+	double mean;
+	cv::Mat_<cv::Vec3b>::iterator it = img.begin<cv::Vec3b>();
+	cv::Mat_<cv::Vec3b>::iterator itend = img.end<cv::Vec3b>();
+
+	for (; it != itend; ++it) {
+		sum = sum + (*it)[1];
 	}
-	mean= (float)sum / (float)(Img_ROI.rows*Img_ROI.cols);
+
+	
+	mean= (double)sum / (double)(Img_ROI.rows*Img_ROI.cols);
 	return mean;
 	
 }
@@ -209,30 +214,17 @@ void CMFC_HeartRateDlg::OnBnClickedButtonDetection()
 
 	timeBeginPeriod(1); //精度1ms
 	FTimerID = timeSetEvent(uDelay, uResolution, TimeProc, dwUser, fuEvent);
-	
+	system("del G.txt");
+	LoadData();
 	cv::String face_cascade_name = "haarcascade_frontalface_alt.xml";
 	
 	if (!face_cascade.load(face_cascade_name))MessageBox(_T("haarcascade_frontalface_alt.xml not exist"));
 }
-void CMFC_HeartRateDlg::GetMeanAndFourier(float *Data, int dataNo, complex *out_data)
-{
-	float BGR_average = 0;
-	complex *G_compx = new complex[dataNo];
-	
-	for (int i = 0; i<dataNo; i++)
-		BGR_average = BGR_average + Data[i] / dataNo;
-	for (int i = 0; i < dataNo; i++)
-	{
-		G_compx[i].re = Data[i] - BGR_average;
-		G_compx[i].im = 0;
-	}
-	DFT(dataNo, G_compx, out_data);
-	delete[] G_compx;
-}
+
 void CMFC_HeartRateDlg::OnBnClickedButtonStart()
 {
-	system("del G.txt");
-	cap= cvCaptureFromCAM(1);
+	
+	cap= cvCaptureFromCAM(0);
 	m_threadPara.m_case = 0;
 	m_threadPara.hWnd = m_hWnd;
 	m_lpThread = AfxBeginThread(&CMFC_HeartRateDlg::threadFun, (LPVOID)&m_threadPara);
@@ -249,7 +241,7 @@ void CMFC_HeartRateDlg::Thread_Image_RGB(LPVOID lParam)
 		img_buffer = cvQueryFrame(cap);
 		if (img_buffer!=nullptr) {
 				frame = img_buffer;
-				
+			
 				img_show = frame;
 				rectangle(img_show,LT,RB, CV_RGB(255, 0, 0));
 				hWnd->ShowImage(frame,hWnd->GetDlgItem(IDC_ImageShow));
@@ -296,24 +288,7 @@ UINT CMFC_HeartRateDlg::threadFun(LPVOID LParam)
 	return 0;
 
 }
-void CMFC_HeartRateDlg::WriteTxt(void)
-{
 
-	std::fstream fp_G;
-	std::fstream fp_T;
-	fp_G.open("G.txt", std::ios::app);
-	fp_T.open("Time.txt", std::ios::app);
-	if (!fp_G) {//如果開啟檔案失敗，fp為0；成功，fp為非0
-
-	}
-	for (int i = 0; i < dataNum; i++)
-	{
-		fp_G << GData[i] << "\n";
-		//fp_T << time_data[i] << "\n";
-	}
-	fp_G.close();
-	fp_T.close();
-}
 void CMFC_HeartRateDlg::ShowImage(cv::Mat Image, CWnd* pWnd)
 {
 	//Windows中顯示圖像存在一個4位元組對齊的問題, 也就是每一行的位元組數必須是4的倍數.
@@ -362,4 +337,29 @@ void CMFC_HeartRateDlg::ShowImage(cv::Mat Image, CWnd* pWnd)
 		SRCCOPY
 	);
 	ReleaseDC(pDC);
+}
+void CMFC_HeartRateDlg::LoadData()
+{
+	
+	std::fstream FilterReader_a, FilterReader_b ;
+	FilterReader_a.open("FilterParameter_a.txt", std::ios::in); FilterReader_b.open("FilterParameter_b.txt", std::ios::in);
+	for (unsigned int i = 0; i < 9; i++) {
+		double temp;
+		FilterReader_a >> temp;
+		a_coeff.push_back(temp);
+		FilterReader_b >> temp;
+		b_coeff.push_back(temp);
+	} FilterReader_a.close(); FilterReader_b.close();
+}
+void CMFC_HeartRateDlg::getFourier(vectord &InputData,complex *outFourierData)
+{
+	complex *data_temp = new complex[InputData.size()];
+	for (unsigned int i = 0; i < InputData.size(); i++)
+	{
+		data_temp[i].re = InputData[i];
+		data_temp[i].im = 0;
+	}
+	DFT(InputData.size(), data_temp, outFourierData);
+	delete[] data_temp;
+
 }
