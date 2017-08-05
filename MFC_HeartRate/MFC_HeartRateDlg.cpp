@@ -100,6 +100,8 @@ void CMFC_HeartRateDlg::DoEvent()
 	{
 		Img_ROI = frame(faces[0]);
 		G_signal.push_back(MeanofGreen(Img_ROI));
+		CString str; str.Format(_T("%d"), G_signal.size());
+		SetDlgItemText(IDC_STATIC_DataNum, str);
 	}
 	if (G_signal.size()>=FPS*30 && !f_SampleDone)
 	{
@@ -118,20 +120,21 @@ void CMFC_HeartRateDlg::DoEvent()
 	{
 	Img_ROI = frame(faces[0]);
 	G_signal.push_back(MeanofGreen(Img_ROI));
-	if (G_signal.size() >= 910)
-		for (unsigned int i = 0; i < G_signal.size()-10; i++)
-			G_signal[i] = G_signal[i + 10];
-	vectord G_filtfilt_out;
-	filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
-	complex *G_signal_fourier = new complex[G_signal.size()];
-	getFourier(G_filtfilt_out, G_signal_fourier);
-	double HR = GetHeartRate(G_signal_fourier, G_signal.size());
-	delete[]G_signal_fourier;
-	CString str; str.Format(_T("%f"), HR);
-	SetDlgItemText(IDC_HR, str);
+		if (G_signal.size() >= 910)
+		{
+			for (unsigned int i = 0; i < G_signal.size() - 10; i++)
+				G_signal[i] = G_signal[i + 10];
+			G_signal.resize(900);
+			vectord G_filtfilt_out;
+			filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
+			complex *G_signal_fourier = new complex[G_signal.size()];
+			getFourier(G_filtfilt_out, G_signal_fourier);
+			double HR = GetHeartRate(G_signal_fourier, G_signal.size());
+			delete[]G_signal_fourier;
+			CString str; str.Format(_T("%f"), HR);
+			SetDlgItemText(IDC_HR, str);
+		}
 	}
-	CString str; str.Format(_T("%d"), G_signal.size());
-	SetDlgItemText(IDC_STATIC_DataNum,str);
 }
 double CMFC_HeartRateDlg::GetHeartRate(complex *in_data,int dataLength)
 {
