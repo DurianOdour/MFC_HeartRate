@@ -91,6 +91,23 @@ void CALLBACK TimeProc(UINT uTimerID, UINT uMsg, DWORD dwUser, DWORD dw1, DWORD 
 
 	pointer->DoEvent();
 }
+void WriteTxt(vectord FilterData,const char filename[])
+{
+
+	std::fstream fp;
+	fp.open(filename, std::ios::app);
+
+
+	if (!fp) {//如果開啟檔案失敗，fp為0；成功，fp為非0
+
+	}
+	for (int i = 0; i < FilterData.size(); i++)
+	{
+		fp << FilterData[i] << "\n";
+	}
+	fp.close();
+
+}
 void CMFC_HeartRateDlg::DoEvent()
 {
 	
@@ -115,12 +132,14 @@ void CMFC_HeartRateDlg::DoEvent()
 		CString str; str.Format(_T("%f"), HR);
 		SetDlgItemText(IDC_HR, str);
 		f_SampleDone = true;
+		WriteTxt(G_signal,"source.txt");
+		WriteTxt(G_filtfilt_out, "filted.txt");
 	}
 	if (f_SampleDone)
 	{
 	Img_ROI = frame(faces[0]);
 	G_signal.push_back(MeanofGreen(Img_ROI));
-		if (G_signal.size() >= 910)
+		if (G_signal.size() >= 909)
 		{
 			for (unsigned int i = 0; i < G_signal.size() - 10; i++)
 				G_signal[i] = G_signal[i + 10];
@@ -172,7 +191,7 @@ void CMFC_HeartRateDlg::DFT(int data_no, complex *in_data, complex *out_data)
 	int m, k;
 	float w_cos, w_sin, angle_step, angle;
 
-	angle_step = 2 * CV_PI / data_no;
+	angle_step = 2 * M_PI / data_no;
 	for (m = 0; m<data_no; m++)
 	{
 		out_data[m].re = in_data[0].re;

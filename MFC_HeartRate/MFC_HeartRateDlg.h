@@ -9,6 +9,8 @@
 #include<fstream>
 #include"time.h"
 #include"CFilter.h"
+#define _USE_MATH_DEFINES
+#include"math.h"
 
 //***************************多媒體計時器
 #include <windows.h>
