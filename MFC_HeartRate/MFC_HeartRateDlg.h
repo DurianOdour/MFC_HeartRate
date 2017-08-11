@@ -17,8 +17,8 @@
 #include <mmsystem.h>
 #include "afxwin.h"
 #pragma comment(lib, "winmm.lib")
-void CALLBACK TimeProc(UINT uTimerID, UINT uMsg,
-	DWORD dwUser, DWORD dw1, DWORD dw2);
+void CALLBACK TimeProc(UINT uTimerID, UINT uMsg,DWORD dwUser, DWORD dw1, DWORD dw2);
+void CALLBACK TimeProc2(UINT uTimerID, UINT uMsg, DWORD dwUser, DWORD dw1, DWORD dw2);
 //***********************************
 using namespace cv;
 struct complex
@@ -61,9 +61,13 @@ protected:
 	DECLARE_MESSAGE_MAP()
 public:
 	vectord G_signal, b_coeff, a_coeff;
+	vectord S_signal;
 	MMRESULT FTimerID;
 	CFilter filter;
 	void DoEvent();
+	void DoEvent2();
+	double PixelCalculate(Mat Image);
+	void WriteTxt(vectord FilterData, const char filename[]);
 	double GetHeartRate(complex * in_data, int dataLength);
 
 	void FaceDetect();
@@ -80,12 +84,16 @@ public:
 	afx_msg void OnBnClickedButtonDetection();
 	afx_msg void OnBnClickedButtonStart();
 	CascadeClassifier face_cascade;
-	static CvCapture *cap;
+	static CvCapture *cap,*cap2;
 	static Mat frame;
+	static IplImage* frame_Shoulder;
+	static CvPoint LBtnDown, LBtnUp;
 	static cv::Point LT, RB ;
+	
 	Mat Img_ROI;
 	std::vector<Rect> faces;
-	
+
+
 	static float time;
 	void DFT(int data_no, complex * in_data, complex * out_data);
 
@@ -96,5 +104,7 @@ public:
 	
 	static time_t t_start;
 	CStatic m_ImgShow;
-	
+	CStatic m_Image_Shoulder;
+	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
 };
