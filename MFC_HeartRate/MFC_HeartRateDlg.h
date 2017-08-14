@@ -60,8 +60,16 @@ protected:
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
 public:
+	/****************/
+	float p0 = 5;//狀態預估模型共變異數
+	double x[2] = { 0 };//狀態值
+	float Q = 0;//速度雜訊
+	double RR = 0.1; //觀測之量測向量雜訊的共變異數
+	double y = 0; //速度預測
+	double kg = 3;// 卡爾曼增益
+	/*****************************/
 	vectord G_signal, b_coeff, a_coeff;
-	vectord S_signal;
+	vectord S_signal,HR_vec;
 	MMRESULT FTimerID;
 	CFilter filter;
 	void DoEvent();

@@ -136,7 +136,7 @@ void CMFC_HeartRateDlg::WriteTxt(vectord FilterData,const char filename[])
 {
 
 	std::fstream fp;
-	fp.open(filename, std::ios::app);
+	fp.open(filename, std::ios::out);
 
 
 	if (!fp) {//如果開啟檔案失敗，fp為0；成功，fp為非0
@@ -169,8 +169,9 @@ void CMFC_HeartRateDlg::DoEvent()
 		complex *G_signal_fourier = new complex[G_signal.size()];
 		getFourier(G_filtfilt_out, G_signal_fourier);
 		double HR = GetHeartRate(G_signal_fourier, G_signal.size());
+		HR_vec.push_back(HR);
 		delete [] G_signal_fourier;
-		CString str; str.Format(_T("%f"), HR);
+		CString str; str.Format(_T("%.2f"), HR);
 		SetDlgItemText(IDC_HR, str);
 		f_SampleDone = true;
 		WriteTxt(G_signal,"source.txt");
@@ -189,9 +190,14 @@ void CMFC_HeartRateDlg::DoEvent()
 			filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
 			complex *G_signal_fourier = new complex[G_signal.size()];
 			getFourier(G_filtfilt_out, G_signal_fourier);
+			
 			double HR = GetHeartRate(G_signal_fourier, G_signal.size());
+			HR_vec.push_back(HR); 
+			
+			CString str; str.Format(_T("%.2f"), x[0]);
+			if (HR_vec.size()==60)
+				WriteTxt(HR_vec,"HR.txt");
 			delete[]G_signal_fourier;
-			CString str; str.Format(_T("%f"), HR);
 			SetDlgItemText(IDC_HR, str);
 		}
 	}
