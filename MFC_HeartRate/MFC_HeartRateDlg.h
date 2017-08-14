@@ -69,7 +69,7 @@ public:
 	double kg = 3;// ¥dº¸°Ò¼W¯q
 	/*****************************/
 	vectord G_signal, b_coeff, a_coeff;
-	vectord S_signal,HR_vec;
+	vectord S_signal,HR_vec,HR_KF;
 	MMRESULT FTimerID;
 	CFilter filter;
 	void DoEvent();

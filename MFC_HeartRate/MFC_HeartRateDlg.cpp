@@ -190,7 +190,13 @@ void CMFC_HeartRateDlg::DoEvent()
 			filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
 			complex *G_signal_fourier = new complex[G_signal.size()];
 			getFourier(G_filtfilt_out, G_signal_fourier);
-			
+
+			y = x[1];//狀態預測
+			p0 = p0 + Q;//計算共變異矩陣
+			kg = p0 / (p0 + RR);//卡爾曼增益
+			x[1] = x[0];
+			HR_KF.push_back(x[0]);
+			p0 = (1 - kg)*p0;//更新共變異矩陣，1為單位為矩陣
 			double HR = GetHeartRate(G_signal_fourier, G_signal.size());
 			HR_vec.push_back(HR); 
 			
@@ -285,7 +291,7 @@ void CMFC_HeartRateDlg::OnBnClickedButtonDetection()
 	timeBeginPeriod(1); //精度1ms
 	FTimerID = timeSetEvent(uDelay, uResolution, TimeProc, dwUser, fuEvent);
 	FTimerID = timeSetEvent(uDelay2, uResolution, TimeProc2, dwUser, fuEvent);
-	system("del source.txt");
+	
 	LoadData();
 	cv::String face_cascade_name = "haarcascade_frontalface_alt.xml";
 	
@@ -316,6 +322,7 @@ void CMFC_HeartRateDlg::Thread_Image_RGB(LPVOID lParam)
 		if (img_buffer != nullptr) {
 			frame = img_buffer;
 			img_show = frame;
+			
 			rectangle(img_show, LT, RB, CV_RGB(255, 0, 0));
 			hWnd->ShowImage(img_show, hWnd->GetDlgItem(IDC_ImageShow));
 
