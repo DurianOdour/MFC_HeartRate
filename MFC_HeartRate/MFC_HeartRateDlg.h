@@ -48,9 +48,7 @@ public:
 
 protected:
 	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV 支援
-
-
-														// 程式碼實作
+												// 程式碼實作
 protected:
 	HICON m_hIcon;
 
@@ -64,7 +62,7 @@ public:
 	float p0 = 5;//狀態預估模型共變異數
 	double x[2] = { 0 };//狀態值
 	float Q = 0;//速度雜訊
-	double RR = 0.1; //觀測之量測向量雜訊的共變異數
+	double RR = 2; //觀測之量測向量雜訊的共變異數
 	double y = 0; //速度預測
 	double kg = 3;// 卡爾曼增益
 	/*****************************/
@@ -78,7 +76,7 @@ public:
 	void WriteTxt(vectord FilterData, const char filename[]);
 	double GetHeartRate(complex * in_data, int dataLength);
 
-	void FaceDetect();
+	
 	CthreadParam m_threadPara;
 	CWinThread*  m_lpThread;
 	static UINT threadFun(LPVOID LParam);
@@ -91,15 +89,14 @@ public:
 
 	afx_msg void OnBnClickedButtonDetection();
 	afx_msg void OnBnClickedButtonStart();
-	CascadeClassifier face_cascade;
+	
 	static CvCapture *cap,*cap2;
 	static Mat frame;
 	static IplImage* frame_Shoulder;
 	static CvPoint LBtnDown, LBtnUp;
-	static cv::Point LT, RB ;
-	
-	Mat Img_ROI;
-	std::vector<Rect> faces;
+	static CascadeClassifier face_cascade;
+	static Rect rect_buffer;
+	static Mat Img_ROI;
 
 
 	static float time;
@@ -115,4 +112,5 @@ public:
 	CStatic m_Image_Shoulder;
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
+	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
 };

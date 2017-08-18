@@ -12,16 +12,16 @@ const int FPS=30;
 #define new DEBUG_NEW
 #endif
 Mat CMFC_HeartRateDlg::frame(480, 360, CV_8UC3);
+Mat CMFC_HeartRateDlg::Img_ROI(50, 50, CV_8UC3);
 IplImage *CMFC_HeartRateDlg::frame_Shoulder = cvCreateImage(cvSize(640,480),IPL_DEPTH_8U,3);
 CvCapture *CMFC_HeartRateDlg::cap;
 CvCapture *CMFC_HeartRateDlg::cap2;
 CvPoint CMFC_HeartRateDlg::LBtnDown = { 0 };
 CvPoint CMFC_HeartRateDlg::LBtnUp = { 0 };
-cv::Point CMFC_HeartRateDlg::LT = { 0 };
-cv::Point CMFC_HeartRateDlg::RB = { 0 };
+CascadeClassifier CMFC_HeartRateDlg::face_cascade; 
 float CMFC_HeartRateDlg::time = 0;
 time_t CMFC_HeartRateDlg::t_start;
-
+Rect CMFC_HeartRateDlg::rect_buffer;
 CMFC_HeartRateDlg::CMFC_HeartRateDlg(CWnd* pParent /*=NULL*/)
 	: CDialogEx(IDD_MFC_HEARTRATE_DIALOG, pParent)
 {
@@ -43,6 +43,7 @@ BEGIN_MESSAGE_MAP(CMFC_HeartRateDlg, CDialogEx)
 	
 	ON_WM_MOUSEMOVE()
 	ON_WM_LBUTTONDOWN()
+	ON_WM_LBUTTONDBLCLK()
 END_MESSAGE_MAP()
 
 
@@ -60,6 +61,7 @@ BOOL CMFC_HeartRateDlg::OnInitDialog()
 									// TODO: 在此加入額外的初始設定
 	m_ImgShow.SetWindowPos(NULL, 640, 0, 480, 360, SWP_SHOWWINDOW);
 	m_Image_Shoulder.SetWindowPos(NULL, 0, 0, 640, 480, SWP_SHOWWINDOW);
+
 	return TRUE;  // 傳回 TRUE，除非您對控制項設定焦點
 }
 
@@ -110,6 +112,7 @@ void CMFC_HeartRateDlg::DoEvent2()
 	Rect roi_shoulder = Rect(LBtnDown.x, LBtnDown.y, LBtnUp.x - LBtnDown.x, LBtnUp.y - LBtnDown.y);
 	Mat image_gray = image_shoulder(roi_shoulder);
 	Mat image_canny;
+	
 	cvtColor(image_gray, image_gray, CV_BGR2GRAY);
 	for (unsigned int i = 0; i < 5; i++)
 	{
@@ -151,19 +154,15 @@ void CMFC_HeartRateDlg::WriteTxt(vectord FilterData,const char filename[])
 }
 void CMFC_HeartRateDlg::DoEvent()
 {
-	
-	if(!f_ROI_successed)FaceDetect();
-	
-	if (f_ROI_successed && !f_SampleDone)
+	Mat face = Img_ROI;
+	if (!f_SampleDone)
 	{
-		Img_ROI = frame(faces[0]);
-		G_signal.push_back(MeanofGreen(Img_ROI));
+		G_signal.push_back(MeanofGreen(face));
 		CString str; str.Format(_T("%d"), G_signal.size());
 		SetDlgItemText(IDC_STATIC_DataNum, str);
 	}
 	if (G_signal.size()>=FPS*30 && !f_SampleDone)
 	{
-		f_ROI_successed = false;
 		vectord G_filtfilt_out;
 		filter.filtfilt(b_coeff,a_coeff, G_signal, G_filtfilt_out);	
 		complex *G_signal_fourier = new complex[G_signal.size()];
@@ -179,32 +178,29 @@ void CMFC_HeartRateDlg::DoEvent()
 	}
 	if (f_SampleDone)
 	{
-	Img_ROI = frame(faces[0]);
-	G_signal.push_back(MeanofGreen(Img_ROI));
-		if (G_signal.size() >= 909)
-		{
-			for (unsigned int i = 0; i < G_signal.size() - 10; i++)
-				G_signal[i] = G_signal[i + 10];
-			G_signal.resize(900);
-			vectord G_filtfilt_out;
-			filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
-			complex *G_signal_fourier = new complex[G_signal.size()];
-			getFourier(G_filtfilt_out, G_signal_fourier);
-
-			y = x[1];//狀態預測
-			p0 = p0 + Q;//計算共變異矩陣
-			kg = p0 / (p0 + RR);//卡爾曼增益
-			x[1] = x[0];
-			HR_KF.push_back(x[0]);
-			p0 = (1 - kg)*p0;//更新共變異矩陣，1為單位為矩陣
-			double HR = GetHeartRate(G_signal_fourier, G_signal.size());
-			HR_vec.push_back(HR); 
+	  G_signal.push_back(MeanofGreen(face));
+	  if (G_signal.size() >= 909)
+	  {
+		for (unsigned int i = 0; i < G_signal.size() - 10; i++)  G_signal[i] = G_signal[i + 10];
+		G_signal.resize(900);
+		vectord G_filtfilt_out;
+		filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
+		complex *G_signal_fourier = new complex[G_signal.size()];
+		getFourier(G_filtfilt_out, G_signal_fourier);
+		y = x[1];//狀態預測
+		p0 = p0 + Q;//計算共變異矩陣
+		kg = p0 / (p0 + RR);//卡爾曼增益
+		x[0] = y + kg*(HR_vec[HR_vec.size()-1] - y);
+		x[1] = x[0];
+		HR_KF.push_back(x[0]);
+		p0 = (1 - kg)*p0;//更新共變異矩陣，1為單位為矩陣
+		double HR = GetHeartRate(G_signal_fourier, G_signal.size());
+		HR_vec.push_back(HR); 
 			
-			CString str; str.Format(_T("%.2f"), x[0]);
-			if (HR_vec.size()==60)
-				WriteTxt(HR_vec,"HR.txt");
-			delete[]G_signal_fourier;
-			SetDlgItemText(IDC_HR, str);
+		CString str; str.Format(_T("%.2f"), x[0]);
+		if (HR_vec.size()==60) WriteTxt(HR_vec,"HR.txt");
+		delete[]G_signal_fourier;
+		SetDlgItemText(IDC_HR, str);
 		}
 	}
 }
@@ -212,7 +208,7 @@ double CMFC_HeartRateDlg::GetHeartRate(complex *in_data,int dataLength)
 {
 	double HR = 0;
 	double A = sqrt(pow(in_data[(int)0.5*dataLength /FPS].re, 2) + pow(in_data[(int)0.5*dataLength / FPS].im, 2));
-	for (int i = 0.5*dataLength / FPS; i < 2.5*dataLength / FPS; i++)
+	for (int i = 0.8*dataLength / FPS; i < 2.5*dataLength / FPS; i++)
 	{
 	if (sqrt(pow(in_data[i + 1].re, 2) + pow(in_data[i + 1].im, 2)) > A)
 	{
@@ -222,22 +218,7 @@ double CMFC_HeartRateDlg::GetHeartRate(complex *in_data,int dataLength)
 	}
 	return HR;
 }
-void CMFC_HeartRateDlg::FaceDetect()
-{
-	cv::Rect rect;
-	Mat frame_gray;
-	cvtColor(frame, frame_gray, COLOR_BGR2GRAY);
-	equalizeHist(frame_gray, frame_gray);
-	face_cascade.detectMultiScale(frame_gray, faces, 1.1, 2, 0 | CV_HAAR_SCALE_IMAGE, cv::Size(30, 30));//FPS下降
-	for (unsigned int i = 0; i < faces.size(); i++)
-	{
-		LT.x = faces[i].x; LT.y = faces[i].y;
-		RB = { faces[i].x + faces[i].width,faces[i].y + faces[i].height };
-		Img_ROI = frame(faces[i]);
-		f_ROI_successed = true;
-		t_start = clock();
-	}
-}
+
 void CMFC_HeartRateDlg::DFT(int data_no, complex *in_data, complex *out_data)
 {
 
@@ -269,9 +250,7 @@ double CMFC_HeartRateDlg::MeanofGreen(Mat img)
 	for (; it != itend; ++it) {
 		sum = sum + (*it)[1];
 	}
-
-	
-	mean= (double)sum / (double)(Img_ROI.rows*Img_ROI.cols);
+	mean= (double)sum / (double)(img.rows*img.cols);
 	return mean;
 	
 }
@@ -293,14 +272,12 @@ void CMFC_HeartRateDlg::OnBnClickedButtonDetection()
 	FTimerID = timeSetEvent(uDelay2, uResolution, TimeProc2, dwUser, fuEvent);
 	
 	LoadData();
-	cv::String face_cascade_name = "haarcascade_frontalface_alt.xml";
-	
-	if (!face_cascade.load(face_cascade_name))MessageBox(_T("haarcascade_frontalface_alt.xml not exist"));
+
 }
 
 void CMFC_HeartRateDlg::OnBnClickedButtonStart()
 {
-	
+	face_cascade.load("haarcascade_frontalface_alt.xml");
 	cap= cvCaptureFromCAM(0);
 	cap2 = cvCaptureFromCAM(2);
 	m_threadPara.m_case = 0;
@@ -313,7 +290,6 @@ void CMFC_HeartRateDlg::Thread_Image_RGB(LPVOID lParam)
 	CMFC_HeartRateDlg * hWnd = (CMFC_HeartRateDlg *)CWnd::FromHandle((HWND)Thread_Info->hWnd);
 	IplImage * img_buffer,*img_buffer2;
 	img_buffer = cvCreateImage(cvSize(480, 360), IPL_DEPTH_8U, 3);
-
 	Mat img_show;
 	while (1)
 	{
@@ -321,12 +297,19 @@ void CMFC_HeartRateDlg::Thread_Image_RGB(LPVOID lParam)
 		img_buffer2 = cvQueryFrame(cap2);
 		if (img_buffer != nullptr) {
 			frame = img_buffer;
-			img_show = frame;
-			
-			rectangle(img_show, LT, RB, CV_RGB(255, 0, 0));
-			hWnd->ShowImage(img_show, hWnd->GetDlgItem(IDC_ImageShow));
-
-
+			std::vector<Rect> faces;
+			Mat frame_gray;
+			cvtColor(frame, frame_gray, COLOR_BGR2GRAY);
+			equalizeHist(frame_gray, frame_gray);
+			face_cascade.detectMultiScale(frame_gray, faces, 1.2, 3, 0 | CV_HAAR_SCALE_IMAGE, cv::Size(30, 30));//FPS下降
+			if (faces.size() >= 1)
+			{
+				Img_ROI = frame(faces[0]);
+				rectangle(frame, faces[0], CV_RGB(255, 0, 0));
+				rect_buffer = faces[0];
+			}
+			if(faces.size()==0)Img_ROI = frame(rect_buffer);
+			hWnd->ShowImage(frame, hWnd->GetDlgItem(IDC_ImageShow));
 		}
 		if (img_buffer2 != nullptr)
 		{
@@ -337,7 +320,6 @@ void CMFC_HeartRateDlg::Thread_Image_RGB(LPVOID lParam)
 			hWnd->ShowImage(show, hWnd->GetDlgItem(IDC_Image_Shoulder));
 			cvReleaseImage(&show);
 		}
-
 	}
 
 }
@@ -345,12 +327,8 @@ void CMFC_HeartRateDlg::Thread_ListenTime(LPVOID lParam)
 {
 	CthreadParam * Thread_Info = (CthreadParam *)lParam;
 	CMFC_HeartRateDlg * hWnd = (CMFC_HeartRateDlg *)CWnd::FromHandle((HWND)Thread_Info->hWnd);
-	while (1) {
-		time_t t_end = clock();
-		time = (float)(t_end - t_start) / CLK_TCK;
-		CString str;
-		str.Format(_T("%f"), time);
-		hWnd->SetDlgItemText(IDC_STATIC_Time, str);
+	while (frame.data) {
+		
 	}
 	
 }
@@ -455,7 +433,6 @@ void CMFC_HeartRateDlg::getFourier(vectord &InputData,complex *outFourierData)
 
 }
 
-
 void CMFC_HeartRateDlg::OnMouseMove(UINT nFlags, CPoint point)
 {
 	if (0 <= point.x && point.x <= 640 && 0 <= point.y && point.y<480 &&nFlags==MK_LBUTTON)
@@ -466,7 +443,6 @@ void CMFC_HeartRateDlg::OnMouseMove(UINT nFlags, CPoint point)
 	CDialogEx::OnMouseMove(nFlags, point);
 }
 
-
 void CMFC_HeartRateDlg::OnLButtonDown(UINT nFlags, CPoint point)
 {
 	if (0 <= point.x && point.x <= 640 && 0<=point.y && point.y<480)
@@ -475,4 +451,12 @@ void CMFC_HeartRateDlg::OnLButtonDown(UINT nFlags, CPoint point)
 	}
 
 	CDialogEx::OnLButtonDown(nFlags, point);
+}
+
+
+void CMFC_HeartRateDlg::OnLButtonDblClk(UINT nFlags, CPoint point)
+{
+	
+
+	CDialogEx::OnLButtonDblClk(nFlags, point);
 }
