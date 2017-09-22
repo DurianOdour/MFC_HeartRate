@@ -60,21 +60,20 @@ protected:
 public:
 	/****************/
 	float p0 = 5;//狀態預估模型共變異數
-	double x[2] = { 0 };//狀態值
+	double K_statement[2] = { 60,60 };//狀態值
 	float Q = 0;//速度雜訊
 	double RR = 2; //觀測之量測向量雜訊的共變異數
-	double y = 0; //速度預測
+	double K_Prediction =0; //速度預測
 	double kg = 3;// 卡爾曼增益
 	/*****************************/
+	double referenceFrequency = 1.0;
 	vectord G_signal, b_coeff, a_coeff;
-	vectord S_signal,HR_vec,HR_KF;
+	vectord S_signal, HR_vec, HR_KF;
 	MMRESULT FTimerID;
 	CFilter filter;
 	void DoEvent();
 	void DoEvent2();
-	double PixelCalculate(Mat Image);
-	void WriteTxt(vectord FilterData, const char filename[]);
-	double GetHeartRate(complex * in_data, int dataLength);
+	
 
 	
 	CthreadParam m_threadPara;
@@ -85,18 +84,23 @@ public:
 	void LoadData();
 	void getFourier(vectord & InputData, complex * outFourierData);
 	void Thread_Image_RGB(LPVOID lParam);
-	void Thread_ListenTime(LPVOID lParam);
+	void WriteTxt(vectord FilterData, const char filename[]);
+	void WriteAddTxt(vectord FilterData, const char filename[]);
+	double PixelCalculate(Mat Image);
+	double GetHeartRate(complex * in_data, int dataLength);
 
 	afx_msg void OnBnClickedButtonDetection();
 	afx_msg void OnBnClickedButtonStart();
-	
+	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
+
 	static CvCapture *cap,*cap2;
-	static Mat frame;
+	static Mat frame, Img_ROI;
 	static IplImage* frame_Shoulder;
 	static CvPoint LBtnDown, LBtnUp;
 	static CascadeClassifier face_cascade;
 	static Rect rect_buffer;
-	static Mat Img_ROI;
+	
 
 
 	static float time;
@@ -110,7 +114,6 @@ public:
 	static time_t t_start;
 	CStatic m_ImgShow;
 	CStatic m_Image_Shoulder;
-	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
-	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
-	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
+	
+	
 };

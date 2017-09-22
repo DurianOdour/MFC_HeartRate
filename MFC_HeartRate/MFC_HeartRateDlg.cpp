@@ -11,7 +11,7 @@ const int FPS=30;
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
-Mat CMFC_HeartRateDlg::frame(480, 360, CV_8UC3);
+Mat CMFC_HeartRateDlg::frame(640, 480, CV_8UC3);
 Mat CMFC_HeartRateDlg::Img_ROI(50, 50, CV_8UC3);
 IplImage *CMFC_HeartRateDlg::frame_Shoulder = cvCreateImage(cvSize(640,480),IPL_DEPTH_8U,3);
 CvCapture *CMFC_HeartRateDlg::cap;
@@ -40,7 +40,6 @@ BEGIN_MESSAGE_MAP(CMFC_HeartRateDlg, CDialogEx)
 	ON_WM_QUERYDRAGICON()
 	ON_BN_CLICKED(IDC_BUTTON_Detection, &CMFC_HeartRateDlg::OnBnClickedButtonDetection)
 	ON_BN_CLICKED(IDC_BUTTON_Start, &CMFC_HeartRateDlg::OnBnClickedButtonStart)
-	
 	ON_WM_MOUSEMOVE()
 	ON_WM_LBUTTONDOWN()
 	ON_WM_LBUTTONDBLCLK()
@@ -152,6 +151,23 @@ void CMFC_HeartRateDlg::WriteTxt(vectord FilterData,const char filename[])
 	fp.close();
 
 }
+void CMFC_HeartRateDlg::WriteAddTxt(vectord FilterData, const char filename[])
+{
+
+	std::fstream fp;
+	fp.open(filename, std::ios::app);
+
+
+	if (!fp) {//如果開啟檔案失敗，fp為0；成功，fp為非0
+
+	}
+	for (int i = 0; i < FilterData.size(); i++)
+	{
+		fp << FilterData[i] << "\n";
+	}
+	fp.close();
+
+}
 void CMFC_HeartRateDlg::DoEvent()
 {
 	Mat face = Img_ROI;
@@ -164,7 +180,8 @@ void CMFC_HeartRateDlg::DoEvent()
 	if (G_signal.size()>=FPS*30 && !f_SampleDone)
 	{
 		vectord G_filtfilt_out;
-		filter.filtfilt(b_coeff,a_coeff, G_signal, G_filtfilt_out);	
+		filter.filtfilt(b_coeff,a_coeff, G_signal, G_filtfilt_out);
+		
 		complex *G_signal_fourier = new complex[G_signal.size()];
 		getFourier(G_filtfilt_out, G_signal_fourier);
 		double HR = GetHeartRate(G_signal_fourier, G_signal.size());
@@ -173,32 +190,50 @@ void CMFC_HeartRateDlg::DoEvent()
 		CString str; str.Format(_T("%.2f"), HR);
 		SetDlgItemText(IDC_HR, str);
 		f_SampleDone = true;
-		WriteTxt(G_signal,"source.txt");
-		WriteTxt(G_filtfilt_out, "filted.txt");
 	}
 	if (f_SampleDone)
-	{
+	{ 
 	  G_signal.push_back(MeanofGreen(face));
-	  if (G_signal.size() >= 909)
-	  {
-		for (unsigned int i = 0; i < G_signal.size() - 10; i++)  G_signal[i] = G_signal[i + 10];
+	
+	  if (G_signal.size() >= 910)
+	  { 
+		for (unsigned int i = 0; i < G_signal.size() - 10; i++)
+		{
+			  G_signal[i] = G_signal[i + 10];
+		}
+
 		G_signal.resize(900);
 		vectord G_filtfilt_out;
 		filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
+		
 		complex *G_signal_fourier = new complex[G_signal.size()];
 		getFourier(G_filtfilt_out, G_signal_fourier);
-		y = x[1];//狀態預測
+	 /*****************************************/
+		K_Prediction = K_statement[1];//狀態預測
 		p0 = p0 + Q;//計算共變異矩陣
 		kg = p0 / (p0 + RR);//卡爾曼增益
-		x[0] = y + kg*(HR_vec[HR_vec.size()-1] - y);
-		x[1] = x[0];
-		HR_KF.push_back(x[0]);
+		K_statement[0] = K_Prediction + kg*(HR_vec[HR_vec.size()-1] - K_Prediction);
+		K_statement[1] = K_statement[0];
+		HR_KF.push_back(K_statement[0]);
+		referenceFrequency = K_statement[0] / 60;
 		p0 = (1 - kg)*p0;//更新共變異矩陣，1為單位為矩陣
 		double HR = GetHeartRate(G_signal_fourier, G_signal.size());
 		HR_vec.push_back(HR); 
+	/*******************************************/
+		if (HR_vec.size() % 2000 == 0) {
 			
-		CString str; str.Format(_T("%.2f"), x[0]);
-		if (HR_vec.size()==60) WriteTxt(HR_vec,"HR.txt");
+			for (unsigned int i = 0; i < HR_vec.size() - 1000; i++)
+			{
+				HR_vec[i] = HR_vec[i + 1000];
+				HR_KF[i]= HR_KF[i + 1000];
+			}
+			HR_vec.resize(1);
+			WriteAddTxt(HR_vec, "HR.txt");
+			HR_KF.resize(1);
+			WriteAddTxt(HR_vec, "HR_KF.txt");
+		}
+		CString str; str.Format(_T("%.1f"), K_statement[0]);
+		
 		delete[]G_signal_fourier;
 		SetDlgItemText(IDC_HR, str);
 		}
@@ -207,14 +242,47 @@ void CMFC_HeartRateDlg::DoEvent()
 double CMFC_HeartRateDlg::GetHeartRate(complex *in_data,int dataLength)
 {
 	double HR = 0;
-	double A = sqrt(pow(in_data[(int)0.5*dataLength /FPS].re, 2) + pow(in_data[(int)0.5*dataLength / FPS].im, 2));
-	for (int i = 0.8*dataLength / FPS; i < 2.5*dataLength / FPS; i++)
+	double Attitude [70][2];
+	int counter = 0;
+	
+	for (uint16_t i = 0.5*dataLength / FPS; i < 2.5*dataLength / FPS; i++)
 	{
-	if (sqrt(pow(in_data[i + 1].re, 2) + pow(in_data[i + 1].im, 2)) > A)
-	{
-		A = sqrt(pow(in_data[i + 1].re, 2) + pow(in_data[i + 1].im, 2));
-		HR = (double)60 * i * FPS / (double)(dataLength);
+		Attitude[counter][0] = sqrt(pow(in_data[i + 1].re, 2) + pow(in_data[i + 1].im, 2));
+		Attitude[counter][1] = (double)i*FPS/dataLength;
+		counter++;
 	}
+	double peak[40][2];
+	uint16_t peak_counter=0;
+	for (size_t i = 1; i < counter-2; i++)
+	{
+		if (Attitude[i - 1][0]<Attitude[i][0] && Attitude[i][0]> Attitude[i + 1][0])
+		{
+			peak[peak_counter][0] = Attitude[i][0];
+			peak[peak_counter][1] = Attitude[i][1];
+			peak_counter++;
+		}
+	}
+	/********************************************/
+	double temp[1][2];
+	for (uint16_t i = 0; i < 10; i++) {
+		for (uint16_t j = i; j < 10; j++) {
+			if (peak[j][0] > peak[i][0]) {
+				temp[0][0] = peak[j][0]; temp[0][1] = peak[j][1];
+				peak[j][0] = peak[i][0]; peak[j][1] = peak[i][1];
+				peak[i][0] = temp[0][0]; peak[i][1] = temp[0][1];
+			}
+		}
+	}
+	
+	double min = 10;
+
+	for (uint16_t i = 0; i < 4; i++)
+	{
+		if (abs(referenceFrequency - peak[i][1]) < min)
+		{
+			min = abs(referenceFrequency - peak[i][1]);
+			HR = peak[i][1] * 60;	
+		}
 	}
 	return HR;
 }
@@ -242,6 +310,7 @@ void CMFC_HeartRateDlg::DFT(int data_no, complex *in_data, complex *out_data)
 }
 double CMFC_HeartRateDlg::MeanofGreen(Mat img)
 {
+
 	int sum = 0;
 	double mean;
 	cv::Mat_<cv::Vec3b>::iterator it = img.begin<cv::Vec3b>();
@@ -250,7 +319,7 @@ double CMFC_HeartRateDlg::MeanofGreen(Mat img)
 	for (; it != itend; ++it) {
 		sum = sum + (*it)[1];
 	}
-	mean= (double)sum / (double)(img.rows*img.cols);
+	mean = (double)sum / (double)(Img_ROI.rows*Img_ROI.cols);
 	return mean;
 	
 }
@@ -262,15 +331,14 @@ void CMFC_HeartRateDlg::OnBnClickedButtonDetection()
 	m_threadPara.hWnd = m_hWnd;
 	m_lpThread = AfxBeginThread(&CMFC_HeartRateDlg::threadFun, (LPVOID)&m_threadPara);
 	UINT uDelay = int(SampleTime);//m_SampleTime 為自訂的取樣時間 單位:毫秒
-	UINT uDelay2 = (int)50;
+	//UINT uDelay2 = (int)50;
 	UINT uResolution = 1;
 	DWORD dwUser = (DWORD)this;
 	UINT fuEvent = TIME_PERIODIC; //You also choose TIME_ONESHOT;
 
 	timeBeginPeriod(1); //精度1ms
 	FTimerID = timeSetEvent(uDelay, uResolution, TimeProc, dwUser, fuEvent);
-	FTimerID = timeSetEvent(uDelay2, uResolution, TimeProc2, dwUser, fuEvent);
-	
+	//FTimerID = timeSetEvent(uDelay2, uResolution, TimeProc2, dwUser, fuEvent);
 	LoadData();
 
 }
@@ -278,8 +346,8 @@ void CMFC_HeartRateDlg::OnBnClickedButtonDetection()
 void CMFC_HeartRateDlg::OnBnClickedButtonStart()
 {
 	face_cascade.load("haarcascade_frontalface_alt.xml");
-	cap= cvCaptureFromCAM(0);
-	cap2 = cvCaptureFromCAM(2);
+	cap= cvCaptureFromCAM(1);
+	//cap2 = cvCaptureFromCAM(2);
 	m_threadPara.m_case = 0;
 	m_threadPara.hWnd = m_hWnd;
 	m_lpThread = AfxBeginThread(&CMFC_HeartRateDlg::threadFun, (LPVOID)&m_threadPara);
@@ -294,7 +362,7 @@ void CMFC_HeartRateDlg::Thread_Image_RGB(LPVOID lParam)
 	while (1)
 	{
 		img_buffer = cvQueryFrame(cap);
-		img_buffer2 = cvQueryFrame(cap2);
+		//img_buffer2 = cvQueryFrame(cap2);
 		if (img_buffer != nullptr) {
 			frame = img_buffer;
 			std::vector<Rect> faces;
@@ -309,9 +377,10 @@ void CMFC_HeartRateDlg::Thread_Image_RGB(LPVOID lParam)
 				rect_buffer = faces[0];
 			}
 			if(faces.size()==0)Img_ROI = frame(rect_buffer);
+
 			hWnd->ShowImage(frame, hWnd->GetDlgItem(IDC_ImageShow));
 		}
-		if (img_buffer2 != nullptr)
+	/*	if (img_buffer2 != nullptr)
 		{
 			cvCopy(img_buffer2, frame_Shoulder);
 			IplImage* show = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 3);
@@ -319,19 +388,11 @@ void CMFC_HeartRateDlg::Thread_Image_RGB(LPVOID lParam)
 			cvRectangle(show,LBtnDown,LBtnUp,CV_RGB(255,0,0),2);
 			hWnd->ShowImage(show, hWnd->GetDlgItem(IDC_Image_Shoulder));
 			cvReleaseImage(&show);
-		}
+		}*/
 	}
 
 }
-void CMFC_HeartRateDlg::Thread_ListenTime(LPVOID lParam)
-{
-	CthreadParam * Thread_Info = (CthreadParam *)lParam;
-	CMFC_HeartRateDlg * hWnd = (CMFC_HeartRateDlg *)CWnd::FromHandle((HWND)Thread_Info->hWnd);
-	while (frame.data) {
-		
-	}
-	
-}
+
 UINT CMFC_HeartRateDlg::threadFun(LPVOID LParam)
 {
 	CthreadParam* para = (CthreadParam*)LParam;
@@ -344,7 +405,7 @@ UINT CMFC_HeartRateDlg::threadFun(LPVOID LParam)
 		lpview->Thread_Image_RGB(LParam);
 		break;
 	case 1:
-		lpview->Thread_ListenTime(LParam);
+	
 		break;
 	case 2:
 
@@ -451,12 +512,4 @@ void CMFC_HeartRateDlg::OnLButtonDown(UINT nFlags, CPoint point)
 	}
 
 	CDialogEx::OnLButtonDown(nFlags, point);
-}
-
-
-void CMFC_HeartRateDlg::OnLButtonDblClk(UINT nFlags, CPoint point)
-{
-	
-
-	CDialogEx::OnLButtonDblClk(nFlags, point);
 }
