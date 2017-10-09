@@ -7,7 +7,7 @@
 #include "MFC_HeartRateDlg.h"
 #include "afxdialogex.h"
 const int FPS=30;
-
+clock_t t0 ;
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -171,8 +171,11 @@ void CMFC_HeartRateDlg::WriteAddTxt(vectord FilterData, const char filename[])
 void CMFC_HeartRateDlg::DoEvent()
 {
 	Mat face = Img_ROI;
+	
+	clock_t tend;
 	if (!f_SampleDone)
 	{
+	
 		G_signal.push_back(MeanofGreen(face));
 		CString str; str.Format(_T("%d"), G_signal.size());
 		SetDlgItemText(IDC_STATIC_DataNum, str);
@@ -185,11 +188,15 @@ void CMFC_HeartRateDlg::DoEvent()
 		complex *G_signal_fourier = new complex[G_signal.size()];
 		getFourier(G_filtfilt_out, G_signal_fourier);
 		double HR = GetHeartRate(G_signal_fourier, G_signal.size());
+		referenceFrequency = HR / 60;
 		HR_vec.push_back(HR);
 		delete [] G_signal_fourier;
 		CString str; str.Format(_T("%.2f"), HR);
 		SetDlgItemText(IDC_HR, str);
 		f_SampleDone = true;
+		tend = clock();
+		float t = (float)(t0 - tend) / CLK_TCK;
+		int a = 9;
 	}
 	if (f_SampleDone)
 	{ 
@@ -205,7 +212,6 @@ void CMFC_HeartRateDlg::DoEvent()
 		G_signal.resize(900);
 		vectord G_filtfilt_out;
 		filter.filtfilt(b_coeff, a_coeff, G_signal, G_filtfilt_out);
-		
 		complex *G_signal_fourier = new complex[G_signal.size()];
 		getFourier(G_filtfilt_out, G_signal_fourier);
 	 /*****************************************/
@@ -215,24 +221,19 @@ void CMFC_HeartRateDlg::DoEvent()
 		K_statement[0] = K_Prediction + kg*(HR_vec[HR_vec.size()-1] - K_Prediction);
 		K_statement[1] = K_statement[0];
 		HR_KF.push_back(K_statement[0]);
-		referenceFrequency = K_statement[0] / 60;
 		p0 = (1 - kg)*p0;//更新共變異矩陣，1為單位為矩陣
 		double HR = GetHeartRate(G_signal_fourier, G_signal.size());
+		referenceFrequency = K_statement[0] / 60;
 		HR_vec.push_back(HR); 
 	/*******************************************/
 		if (HR_vec.size() % 2000 == 0) {
-			
-			for (unsigned int i = 0; i < HR_vec.size() - 1000; i++)
-			{
-				HR_vec[i] = HR_vec[i + 1000];
-				HR_KF[i]= HR_KF[i + 1000];
-			}
-			HR_vec.resize(1);
 			WriteAddTxt(HR_vec, "HR.txt");
-			HR_KF.resize(1);
+			HR_vec.resize(0);
 			WriteAddTxt(HR_vec, "HR_KF.txt");
+			HR_KF.resize(0);
+			
 		}
-		CString str; str.Format(_T("%.1f"), K_statement[0]);
+		CString str; str.Format(_T("%.1f"), HR);
 		
 		delete[]G_signal_fourier;
 		SetDlgItemText(IDC_HR, str);
@@ -245,7 +246,7 @@ double CMFC_HeartRateDlg::GetHeartRate(complex *in_data,int dataLength)
 	double Attitude [70][2];
 	int counter = 0;
 	
-	for (uint16_t i = 0.5*dataLength / FPS; i < 2.5*dataLength / FPS; i++)
+	for (uint16_t i =(double) (referenceFrequency-0.3)*dataLength / FPS; i < (double)(referenceFrequency+0.3)*dataLength / FPS; i++)
 	{
 		Attitude[counter][0] = sqrt(pow(in_data[i + 1].re, 2) + pow(in_data[i + 1].im, 2));
 		Attitude[counter][1] = (double)i*FPS/dataLength;
@@ -264,8 +265,8 @@ double CMFC_HeartRateDlg::GetHeartRate(complex *in_data,int dataLength)
 	}
 	/********************************************/
 	double temp[1][2];
-	for (uint16_t i = 0; i < 10; i++) {
-		for (uint16_t j = i; j < 10; j++) {
+	for (uint16_t i = 0; i < peak_counter; i++) {
+		for (uint16_t j = i; j < peak_counter; j++) {
 			if (peak[j][0] > peak[i][0]) {
 				temp[0][0] = peak[j][0]; temp[0][1] = peak[j][1];
 				peak[j][0] = peak[i][0]; peak[j][1] = peak[i][1];
@@ -276,7 +277,7 @@ double CMFC_HeartRateDlg::GetHeartRate(complex *in_data,int dataLength)
 	
 	double min = 10;
 
-	for (uint16_t i = 0; i < 4; i++)
+	for (uint16_t i = 0; i <2; i++)
 	{
 		if (abs(referenceFrequency - peak[i][1]) < min)
 		{
@@ -340,6 +341,7 @@ void CMFC_HeartRateDlg::OnBnClickedButtonDetection()
 	FTimerID = timeSetEvent(uDelay, uResolution, TimeProc, dwUser, fuEvent);
 	//FTimerID = timeSetEvent(uDelay2, uResolution, TimeProc2, dwUser, fuEvent);
 	LoadData();
+	t0 = clock();
 
 }
 
@@ -426,6 +428,7 @@ void CMFC_HeartRateDlg::ShowImage(cv::Mat Image, CWnd* pWnd)
 	//如果我們直接把Mat的data加個資料頭再顯示出來就可能會出錯.
 	//手動4位元組對齊, 就是計算每行的位元組是不是4的倍數, 不是的話, 在後面補0
 	//但是我們把圖片轉成RGBA之後, 一個圖元就是4個位元組, 不管你一行幾個圖元, 一直都是對齊的.
+
 	cv::Mat imgTmp;
 	CRect rect;
 	pWnd->GetClientRect(&rect);
